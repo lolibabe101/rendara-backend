@@ -216,3 +216,226 @@ BEGIN
   END LOOP;
 END;
 $$;
+
+-- ══════════════════════════════════════════════════════════════
+-- RENDARA PRO — SCHEMA ADDITIONS v2.0
+-- ══════════════════════════════════════════════════════════════
+
+-- ─── SUBSCRIPTION PLANS ──────────────────────────────────────
+CREATE TABLE IF NOT EXISTS subscription_plans (
+  id          UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  name        VARCHAR(50) NOT NULL,  -- free | basic | pro | enterprise
+  display     VARCHAR(100) NOT NULL,
+  price_ngn   NUMERIC(12,2) DEFAULT 0,
+  price_annual_ngn NUMERIC(12,2) DEFAULT 0,
+  max_invoices_month INTEGER DEFAULT 5,
+  max_businesses INTEGER DEFAULT 1,
+  max_team_members INTEGER DEFAULT 1,
+  features    JSONB DEFAULT '[]',
+  is_active   BOOLEAN DEFAULT TRUE,
+  created_at  TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ─── SUBSCRIPTIONS ────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS subscriptions (
+  id                UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  business_id       UUID REFERENCES businesses(id) ON DELETE CASCADE,
+  plan_id           UUID REFERENCES subscription_plans(id),
+  status            VARCHAR(30) DEFAULT 'trial', -- trial|active|past_due|cancelled|expired
+  billing_cycle     VARCHAR(20) DEFAULT 'monthly', -- monthly|annual
+  current_period_start TIMESTAMPTZ DEFAULT NOW(),
+  current_period_end   TIMESTAMPTZ DEFAULT NOW() + INTERVAL '30 days',
+  paystack_customer_code VARCHAR(100),
+  paystack_subscription_code VARCHAR(100),
+  cancel_at_period_end BOOLEAN DEFAULT FALSE,
+  created_at        TIMESTAMPTZ DEFAULT NOW(),
+  updated_at        TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ─── EMPLOYEES / PAYROLL ─────────────────────────────────────
+CREATE TABLE IF NOT EXISTS employees (
+  id            UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  business_id   UUID REFERENCES businesses(id) ON DELETE CASCADE,
+  first_name    VARCHAR(100) NOT NULL,
+  last_name     VARCHAR(100) NOT NULL,
+  email         VARCHAR(255),
+  phone         VARCHAR(20),
+  designation   VARCHAR(100),
+  department    VARCHAR(100),
+  grade_level   VARCHAR(50),
+  gross_salary  NUMERIC(15,2) NOT NULL DEFAULT 0,
+  basic_salary  NUMERIC(15,2) DEFAULT 0,
+  housing       NUMERIC(15,2) DEFAULT 0,
+  transport     NUMERIC(15,2) DEFAULT 0,
+  pension_rate  NUMERIC(5,2) DEFAULT 8.0,
+  nhf_rate      NUMERIC(5,2) DEFAULT 2.5,
+  bank_name     VARCHAR(100),
+  account_number VARCHAR(20),
+  tax_id        VARCHAR(50),
+  date_employed DATE,
+  is_active     BOOLEAN DEFAULT TRUE,
+  created_at    TIMESTAMPTZ DEFAULT NOW(),
+  updated_at    TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ─── PAYROLL RUNS ─────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS payroll_runs (
+  id            UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  business_id   UUID REFERENCES businesses(id) ON DELETE CASCADE,
+  pay_period    VARCHAR(20) NOT NULL,  -- YYYY-MM
+  run_date      DATE NOT NULL DEFAULT CURRENT_DATE,
+  total_gross   NUMERIC(15,2) DEFAULT 0,
+  total_paye    NUMERIC(15,2) DEFAULT 0,
+  total_pension NUMERIC(15,2) DEFAULT 0,
+  total_nhf     NUMERIC(15,2) DEFAULT 0,
+  total_net     NUMERIC(15,2) DEFAULT 0,
+  status        VARCHAR(20) DEFAULT 'draft',  -- draft|approved|filed
+  filed_at      TIMESTAMPTZ,
+  lirs_reference VARCHAR(100),
+  created_by    UUID REFERENCES users(id),
+  created_at    TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ─── PAYROLL LINE ITEMS ───────────────────────────────────────
+CREATE TABLE IF NOT EXISTS payroll_items (
+  id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  payroll_run_id  UUID REFERENCES payroll_runs(id) ON DELETE CASCADE,
+  employee_id     UUID REFERENCES employees(id),
+  gross_salary    NUMERIC(15,2) NOT NULL,
+  basic           NUMERIC(15,2) DEFAULT 0,
+  housing         NUMERIC(15,2) DEFAULT 0,
+  transport       NUMERIC(15,2) DEFAULT 0,
+  gross_income    NUMERIC(15,2) DEFAULT 0,
+  cra             NUMERIC(15,2) DEFAULT 0,
+  pension_employee NUMERIC(15,2) DEFAULT 0,
+  nhf             NUMERIC(15,2) DEFAULT 0,
+  taxable_income  NUMERIC(15,2) DEFAULT 0,
+  paye            NUMERIC(15,2) DEFAULT 0,
+  net_pay         NUMERIC(15,2) DEFAULT 0,
+  created_at      TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ─── DOCUMENTS VAULT ──────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS documents (
+  id            UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  business_id   UUID REFERENCES businesses(id) ON DELETE CASCADE,
+  doc_type      VARCHAR(50) NOT NULL, -- tcc|wht_cert|vat_cert|afs|tin|cac|other
+  title         VARCHAR(255) NOT NULL,
+  file_name     VARCHAR(255),
+  file_url      TEXT,
+  file_size     INTEGER,
+  issued_by     VARCHAR(100),
+  issued_date   DATE,
+  expiry_date   DATE,
+  reference     VARCHAR(100),
+  notes         TEXT,
+  uploaded_by   UUID REFERENCES users(id),
+  created_at    TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ─── WHT CREDIT CERTIFICATES ─────────────────────────────────
+CREATE TABLE IF NOT EXISTS wht_credits (
+  id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  business_id     UUID REFERENCES businesses(id) ON DELETE CASCADE,
+  invoice_id      UUID REFERENCES invoices(id),
+  cert_number     VARCHAR(100),
+  withheld_by     VARCHAR(255) NOT NULL,
+  withheld_by_tin VARCHAR(20),
+  amount_subject  NUMERIC(15,2) NOT NULL,
+  wht_rate        NUMERIC(5,2) NOT NULL,
+  wht_amount      NUMERIC(15,2) NOT NULL,
+  period          VARCHAR(20),
+  jurisdiction    VARCHAR(50) DEFAULT 'federal',
+  status          VARCHAR(30) DEFAULT 'unmatched', -- unmatched|matched|applied
+  applied_to_cit  BOOLEAN DEFAULT FALSE,
+  created_at      TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ─── TAX CALENDAR EVENTS ─────────────────────────────────────
+CREATE TABLE IF NOT EXISTS tax_deadlines (
+  id            UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  business_id   UUID REFERENCES businesses(id) ON DELETE CASCADE,
+  tax_type      VARCHAR(50) NOT NULL,
+  title         VARCHAR(255) NOT NULL,
+  deadline_date DATE NOT NULL,
+  period        VARCHAR(20),
+  amount_due    NUMERIC(15,2) DEFAULT 0,
+  status        VARCHAR(30) DEFAULT 'upcoming', -- upcoming|due|overdue|filed|paid
+  filed_at      TIMESTAMPTZ,
+  reference     VARCHAR(100),
+  created_at    TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ─── RECURRING INVOICES ───────────────────────────────────────
+CREATE TABLE IF NOT EXISTS recurring_invoices (
+  id            UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  business_id   UUID REFERENCES businesses(id) ON DELETE CASCADE,
+  customer_id   UUID REFERENCES customers(id),
+  title         VARCHAR(255) NOT NULL,
+  frequency     VARCHAR(20) NOT NULL,  -- monthly|quarterly|annual
+  next_date     DATE NOT NULL,
+  last_sent     DATE,
+  items         JSONB NOT NULL DEFAULT '[]',
+  notes         TEXT,
+  is_active     BOOLEAN DEFAULT TRUE,
+  created_by    UUID REFERENCES users(id),
+  created_at    TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ─── COMPANY BRANDING ─────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS business_branding (
+  id            UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  business_id   UUID UNIQUE REFERENCES businesses(id) ON DELETE CASCADE,
+  logo_url      TEXT,
+  brand_color   VARCHAR(20) DEFAULT '#00897B',
+  invoice_footer TEXT,
+  stamp_url     TEXT,
+  updated_at    TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ─── CONSULTANT CLIENTS ───────────────────────────────────────
+CREATE TABLE IF NOT EXISTS consultant_clients (
+  id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  consultant_id   UUID REFERENCES users(id) ON DELETE CASCADE,
+  business_id     UUID REFERENCES businesses(id) ON DELETE CASCADE,
+  access_level    VARCHAR(30) DEFAULT 'full', -- full|view|file_only
+  granted_at      TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE(consultant_id, business_id)
+);
+
+-- ─── PENALTY CALCULATIONS ─────────────────────────────────────
+CREATE TABLE IF NOT EXISTS penalty_records (
+  id            UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  business_id   UUID REFERENCES businesses(id) ON DELETE CASCADE,
+  tax_type      VARCHAR(50) NOT NULL,
+  period        VARCHAR(20),
+  principal     NUMERIC(15,2) NOT NULL,
+  days_late     INTEGER DEFAULT 0,
+  penalty_rate  NUMERIC(5,2) DEFAULT 10.0,
+  interest_rate NUMERIC(5,2) DEFAULT 21.0,
+  penalty_amount NUMERIC(15,2) DEFAULT 0,
+  interest_amount NUMERIC(15,2) DEFAULT 0,
+  total_due     NUMERIC(15,2) DEFAULT 0,
+  created_at    TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ─── SEED SUBSCRIPTION PLANS ──────────────────────────────────
+INSERT INTO subscription_plans (name, display, price_ngn, price_annual_ngn, max_invoices_month, max_businesses, max_team_members, features)
+VALUES
+  ('free',   'Free',        0,          0,         5,   1, 1,  '["5 invoices/month","Basic dashboard","NRS sandbox"]'),
+  ('pro',    'Rendara Pro', 45000,      450000,    999, 5, 10, '["Unlimited invoices","All tax types","Payroll module","Document vault","WHT credits","Tax calendar","Team management","Priority support","CIT workbench","Recurring invoices"]'),
+  ('enterprise', 'Enterprise', 120000,  1200000,  9999,20, 50, '["Everything in Pro","Multi-company","Consultant portal","Custom branding","Dedicated support","API access","SLA guarantee"]')
+ON CONFLICT DO NOTHING;
+
+-- ─── INDEXES ──────────────────────────────────────────────────
+CREATE INDEX IF NOT EXISTS idx_employees_biz ON employees(business_id);
+CREATE INDEX IF NOT EXISTS idx_payroll_biz ON payroll_runs(business_id);
+CREATE INDEX IF NOT EXISTS idx_payroll_period ON payroll_runs(pay_period);
+CREATE INDEX IF NOT EXISTS idx_docs_biz ON documents(business_id);
+CREATE INDEX IF NOT EXISTS idx_docs_type ON documents(doc_type);
+CREATE INDEX IF NOT EXISTS idx_whtcred_biz ON wht_credits(business_id);
+CREATE INDEX IF NOT EXISTS idx_deadlines_biz ON tax_deadlines(business_id);
+CREATE INDEX IF NOT EXISTS idx_deadlines_date ON tax_deadlines(deadline_date);
+CREATE INDEX IF NOT EXISTS idx_recur_biz ON recurring_invoices(business_id);
+CREATE INDEX IF NOT EXISTS idx_subs_biz ON subscriptions(business_id);
+
