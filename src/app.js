@@ -24,6 +24,7 @@ const reportsRoutes     = require('./modules/reports/reports.routes');
 const payrollRoutes     = require('./modules/payroll/payroll.routes');
 const docsRoutes        = require('./modules/documents/documents.routes');
 const { whtCreditsRouter, brandingRouter, calendarRouter, recurringRouter, subscriptionsRouter } = require('./modules/pro/pro.routes');
+const { webhookRouter: messagingWebhookRouter, channelRouter: messagingChannelRouter } = require('./modules/messaging/messaging.routes');
 
 const app = express();
 
@@ -54,8 +55,10 @@ app.get('/health', (req, res) => {
 
 // Public routes
 app.use('/api/auth', authRoutes);
-app.use('/api/invoices', invoiceRoutes);
 app.use('/api/subscriptions', subscriptionsRouter);
+// Messaging webhooks — PUBLIC (no auth) — platform webhooks call these
+app.use('/api/messaging', messagingWebhookRouter);
+app.use('/api/invoices', invoiceRoutes);
 
 // Protected business-scoped routes
 const bizRouter = express.Router({ mergeParams: true });
@@ -73,6 +76,7 @@ bizRouter.use('/wht-credits',  whtCreditsRouter);
 bizRouter.use('/branding',     brandingRouter);
 bizRouter.use('/calendar',     calendarRouter);
 bizRouter.use('/recurring',    recurringRouter);
+bizRouter.use('/messaging',    messagingChannelRouter);
 
 app.use('/api/businesses', authenticate, businessRoutes);
 app.use('/api/businesses/:businessId', bizRouter);
@@ -82,7 +86,7 @@ app.use(errorHandler);
 
 // Auto-migrate then start
 const runMigrations = async () => {
-  const migrations = ['001_initial.sql', '002_pro.sql'];
+  const migrations = ['001_initial.sql', '002_pro.sql', '003_messaging.sql'];
   for (const file of migrations) {
     try {
       const sqlPath = path.join(__dirname, '..', 'migrations', file);

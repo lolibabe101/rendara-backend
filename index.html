@@ -1973,6 +1973,17 @@ async function renderSettings(){
       <button class="btn bo bsm" onclick="toast('Live mode requires FIRS API key — contact NRS')">Switch to Live mode</button>
     </div>
     <div class="card cp">
+      <div class="dw-t">Connected Channels <span style="font-size:10px;font-weight:500;color:var(--txt3);">— chat, messaging, WhatsApp</span></div>
+      <div style="font-size:11px;color:var(--txt3);margin-bottom:12px;">Create invoices, check taxes and manage Rendara directly from Telegram, WhatsApp, Messenger, or Instagram.</div>
+      <div id="channels-list" style="margin-bottom:12px;"><div style="font-size:12px;color:var(--txt3);">Loading…</div></div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;">
+        <button class="btn bp bsm" onclick="connectChannel('telegram')">+ Connect Telegram</button>
+        <button class="btn bg bsm" onclick="connectChannel('whatsapp')">+ Connect WhatsApp</button>
+        <button class="btn bg bsm" onclick="connectChannel('messenger')">+ Messenger</button>
+        <button class="btn bg bsm" onclick="connectChannel('instagram')">+ Instagram</button>
+      </div>
+    </div>
+    <div class="card cp">
       <div class="dw-t">Appearance</div>
       <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;">
         <span style="font-size:13px;color:var(--txt2);">Dark mode</span>
@@ -2035,6 +2046,74 @@ async function saveBranding(){
   setBtn('brand-save-btn',false,'Save Branding');
   if(d?.success){toast('✓ Branding saved — all future invoices will use this','ok');closeModal('brandModal');}
 }
+
+// ══════ CONNECTED CHANNELS ══════
+async function loadChannelsList() {
+  const listEl = document.getElementById('channels-list');
+  if (!listEl) return;
+  const d = await GET(biz('/messaging/channels'));
+  const channels = d?.data || [];
+  if (!channels.length) {
+    listEl.innerHTML = `<div style="font-size:12px;color:var(--txt3);padding:10px;background:var(--s2);border-radius:8px;text-align:center;">No channels connected yet. Connect one to chat with Rendara.</div>`;
+    return;
+  }
+  const icons = { telegram: '✈️', whatsapp: '💬', messenger: '💙', instagram: '📸', sms: '📱' };
+  listEl.innerHTML = channels.map(c => `
+    <div style="display:flex;align-items:center;gap:10px;padding:9px 12px;background:var(--s2);border:1px solid var(--bdr);border-radius:8px;margin-bottom:6px;">
+      <div style="width:30px;height:30px;border-radius:8px;background:var(--tbg);display:flex;align-items:center;justify-content:center;font-size:16px;">${icons[c.platform]||'💬'}</div>
+      <div style="flex:1;min-width:0;">
+        <div style="font-size:12px;font-weight:600;text-transform:capitalize;">${c.platform}</div>
+        <div style="font-size:10px;color:var(--txt3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${c.display_name || c.external_id}</div>
+      </div>
+      <span class="bdg bg-g">Active</span>
+      <button class="btn br bxs" onclick="unlinkChannel('${c.id}')">✕</button>
+    </div>
+  `).join('');
+}
+
+async function connectChannel(platform) {
+  const d = await POST(biz('/messaging/channels/generate-code'), { platform });
+  if (!d?.success) return;
+  const data = d.data;
+  let m = document.getElementById('channelModal');
+  if (!m) {
+    m = document.createElement('div');
+    m.className = 'ov'; m.id = 'channelModal';
+    document.body.appendChild(m);
+    m.onclick = e => { if (e.target === m) closeModal('channelModal'); };
+  }
+  const botName = platform === 'telegram' ? '@rendara_bot' : 'the Rendara account';
+  m.innerHTML = `<div class="modal">
+    <div class="mt">Link ${platform.charAt(0).toUpperCase()+platform.slice(1)}</div>
+    <div class="ms">Send this 6-digit code from ${botName} to verify · expires in 15 minutes</div>
+    <div style="text-align:center;padding:20px;background:var(--tbg);border:2px dashed var(--tbdr);border-radius:12px;margin-bottom:14px;">
+      <div style="font-family:var(--fm);font-size:32px;font-weight:700;color:var(--tl);letter-spacing:6px;">${data.code}</div>
+      <div style="font-size:11px;color:var(--txt3);margin-top:6px;">Tap to copy · expires ${new Date(data.expiresAt).toLocaleTimeString('en-NG')}</div>
+    </div>
+    <div class="alert a-t"><span class="ai">📘</span><div class="at" style="white-space:pre-line;">${data.instructions}</div></div>
+    ${platform === 'whatsapp' || platform === 'messenger' || platform === 'instagram' ? `
+      <div class="alert a-a"><span class="ai">ℹ️</span><div class="at"><strong>${platform.charAt(0).toUpperCase()+platform.slice(1)} requires Meta Business verification.</strong> This channel will activate once your Meta Business account is approved (takes 3–10 days).</div></div>
+    ` : ''}
+    <div class="mf">
+      <button class="btn bg" onclick="closeModal('channelModal')">Close</button>
+      <button class="btn bp" onclick="navigator.clipboard?.writeText('${data.code}').then(()=>toast('Code copied!','ok'));">Copy code</button>
+    </div>
+  </div>`;
+  openModal('channelModal');
+}
+
+async function unlinkChannel(id) {
+  if (!confirm('Unlink this channel? You can always reconnect later.')) return;
+  const d = await DEL(biz(`/messaging/channels/${id}`));
+  if (d?.success) { toast('Channel unlinked'); loadChannelsList(); }
+}
+
+// Auto-load channels list when settings page opens
+const _origRenderSettings = renderSettings;
+renderSettings = async function() {
+  await _origRenderSettings();
+  setTimeout(loadChannelsList, 100);
+};
 
 // ══════ INIT ══════
 document.addEventListener('keydown',e=>{if(e.key==='Escape')document.querySelectorAll('.ov.on').forEach(o=>o.classList.remove('on'));});
