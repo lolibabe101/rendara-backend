@@ -82,13 +82,17 @@ app.use(errorHandler);
 
 // Auto-migrate then start
 const runMigrations = async () => {
-  try {
-    const sqlPath = path.join(__dirname, '..', 'migrations', '001_initial.sql');
-    const sql = fs.readFileSync(sqlPath, 'utf8');
-    await pool.query(sql);
-    logger.info('✅ Database migration complete');
-  } catch (err) {
-    logger.error('Migration error: ' + err.message);
+  const migrations = ['001_initial.sql', '002_pro.sql'];
+  for (const file of migrations) {
+    try {
+      const sqlPath = path.join(__dirname, '..', 'migrations', file);
+      if (!fs.existsSync(sqlPath)) continue;
+      const sql = fs.readFileSync(sqlPath, 'utf8');
+      await pool.query(sql);
+      logger.info(`✅ Migration ${file} complete`);
+    } catch (err) {
+      logger.error(`Migration ${file} error: ${err.message}`);
+    }
   }
 };
 
@@ -100,3 +104,36 @@ runMigrations().then(() => {
 });
 
 module.exports = app;
+
+// ── PENALTY CALCULATOR (public utility) ──────────────────────
+const penaltyRouter = require('express').Router();
+penaltyRouter.post('/calculate', (req, res) => {
+  const { taxType, principal, dueDate, paymentDate } = req.body;
+  if (!principal || !dueDate) {
+    return res.status(400).json({ success: false, message: 'principal and dueDate required' });
+  }
+  const due = new Date(dueDate);
+  const paid = paymentDate ? new Date(paymentDate) : new Date();
+  const daysLate = Math.max(0, Math.ceil((paid - due) / (1000 * 60 * 60 * 24)));
+  
+  // FIRS penalty: 10% of tax + 21% per annum interest (CITA S.85, FITA S.68)
+  const penaltyRate = 0.10;
+  const interestRate = 0.21 / 365;
+  const penaltyAmount = daysLate > 0 ? principal * penaltyRate : 0;
+  const interestAmount = daysLate > 0 ? principal * interestRate * daysLate : 0;
+  const totalDue = parseFloat(principal) + penaltyAmount + interestAmount;
+
+  res.json({
+    success: true,
+    data: {
+      taxType, principal: parseFloat(principal),
+      dueDate, paymentDate: paid.toISOString().split('T')[0],
+      daysLate, penaltyRate: '10%', interestRate: '21% per annum',
+      penaltyAmount: +penaltyAmount.toFixed(2),
+      interestAmount: +interestAmount.toFixed(2),
+      totalDue: +totalDue.toFixed(2),
+      breakdown: `Principal ₦${principal} + Penalty ₦${penaltyAmount.toFixed(2)} + Interest ₦${interestAmount.toFixed(2)} = ₦${totalDue.toFixed(2)}`
+    }
+  });
+});
+app.use('/api/penalty', penaltyRouter);
