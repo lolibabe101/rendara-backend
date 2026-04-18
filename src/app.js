@@ -90,11 +90,30 @@ app.use((req, res) => {
 // ── Global error handler ──────────────────────────────────────────────────────
 app.use(errorHandler);
 
-// ── Start ─────────────────────────────────────────────────────────────────────
+// ── Auto-migrate then start ───────────────────────────────────────────────────
+const fs = require('fs');
+const path = require('path');
+const { pool } = require('./config/db');
+
+const runMigrations = async () => {
+  try {
+    const sqlPath = path.join(__dirname, '..', 'migrations', '001_initial.sql');
+    const sql = fs.readFileSync(sqlPath, 'utf8');
+    await pool.query(sql);
+    logger.info('✅ Database migration complete');
+  } catch (err) {
+    logger.error('❌ Migration error: ' + err.message);
+    // Don't crash — tables may already exist
+  }
+};
+
 const PORT = env.port;
-app.listen(PORT, () => {
-  logger.info(`🚀 Rendara API running on port ${PORT} [${env.nodeEnv}]`);
-  logger.info(`📋 Health check: http://localhost:${PORT}/health`);
+
+runMigrations().then(() => {
+  app.listen(PORT, () => {
+    logger.info(`🚀 Rendara API running on port ${PORT} [${env.nodeEnv}]`);
+    logger.info(`📋 Health check: http://localhost:${PORT}/health`);
+  });
 });
 
 module.exports = app; // for testing
