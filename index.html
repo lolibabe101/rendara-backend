@@ -230,7 +230,6 @@ tr:hover td{background:rgba(0,137,123,.02);}
         <div class="fg"><div class="fl">Email address</div><input class="fi" id="login-email" type="email" placeholder="you@company.com"/></div>
         <div class="fg"><div class="fl">Password</div><input class="fi" id="login-pass" type="password" placeholder="••••••••" onkeydown="if(event.key==='Enter')doLogin()"/></div>
         <button class="auth-btn" id="login-btn" onclick="doLogin()">Sign In →</button>
-        <div class="auth-link">Don't have an account? <a onclick="showAuthPanel('register')">Create account</a></div>
       </div>
 
       <!-- REGISTER PANEL -->
@@ -247,7 +246,6 @@ tr:hover td{background:rgba(0,137,123,.02);}
         <div class="fg"><div class="fl">Email</div><input class="fi" id="reg-email" type="email" placeholder="you@company.ng"/></div>
         <div class="fg"><div class="fl">Password (min 8 chars)</div><input class="fi" id="reg-pass" type="password" placeholder="••••••••"/></div>
         <button class="auth-btn" id="reg-btn" onclick="doRegister()">Create Account →</button>
-        <div class="auth-link">Already have an account? <a onclick="showAuthPanel('login')">Sign in</a></div>
       </div>
     </div>
 
